@@ -57,7 +57,7 @@ char map[MAP_HEIGHT][MAP_WIDTH * 2 + 1] = {
 };
 
 int dir; //상,하,좌,우 각각 8,2,4,6 (숫자 키패드)
-int moveSpeed = 300; //moveSpeed 밀리초만큼 Sleep한 후 캐릭터가 1칸 움직이는 걸 반복합니다.
+int moveSpeed = 300; //moveSpeed 밀리초만큼 Sleep한 후 캐릭터가 1칸 움직이는 걸 반복합니다. (숫자가 낮을수록 속도가 빠름)
 
 
 unsigned int __stdcall KeyboardHandlerThread(void* args) {
@@ -194,11 +194,11 @@ void keyboardHandler() {
 	HANDLE handlerThread;
 	unsigned handlerThreadThreadID;
 
-	handlerThread = (HANDLE)_beginthreadex(NULL, 0, KeyboardHandlerThread, NULL, 0, &handlerThreadThreadID);
+	handlerThread = (HANDLE)_beginthreadex(NULL, 0, KeyboardHandlerThread, NULL, 0, &handlerThreadThreadID); //이 쓰레드에서 방향키에 따라 dir를 설정
 
 	while (1) {
-		move(dir);
-		Sleep(moveSpeed);
+		move(dir); //dir방향으로 이동
+		Sleep(moveSpeed); //moveSpeed 시간만큼 sleep
 	}
 }
 

@@ -91,6 +91,10 @@ void setTextColor(int color) {
 }
 
 unsigned int __stdcall KeyboardHandlerThread(void* args) {
+	if (seqNum >= MAX_PLAYABLE_COUNT) { //5번째 이상 접속부터는 구경만
+		return 0;
+	}
+
 	while (1) {
 		int key = getch();
 
@@ -200,21 +204,37 @@ bool isWall(int x, int y) {
 	return false;
 }
 
-void move(int k) {
-	struct charactor* ch = charactorArr[k];
+void drawIcon(int seq) {
+	struct charactor* ch = charactorArr[seq];
 
+	if (ch->next_x < 0 || ch->next_y < 0 || ch->next_x >= 2 * MAP_WIDTH || ch->next_y >= MAP_HEIGHT) { //맵 범위 벗어나면 return
+		return;
+	}
+
+	//원래 위치에 있던 아이콘 지우고
 	gotoxy(ch->x, ch->y);
 	printf("　");
+
+	//새 위치로 이동
 	gotoxy(ch->next_x, ch->next_y);
-	if (k == seqNum) { //내 클라이언트에 해당하는 캐릭터 바꿀 땐 빨간색으로 아이콘 표시
-		setTextColor(COLOR_RED);
-	}
 	printf("%s", ch->icon);
-	if (k == seqNum) {
-		setTextColor(COLOR_WHITE);
-	}
+
 	ch->x = ch->next_x;
 	ch->y = ch->next_y;
+}
+
+void move(int seq) {
+	struct charactor* ch = charactorArr[seq];
+
+	if (seq == seqNum) { //내 클라이언트에 해당하는 캐릭터 바꿀 땐 빨간색으로 아이콘 표시
+		setTextColor(COLOR_RED);
+	}
+	
+	drawIcon(seq);
+
+	if (seq == seqNum) {
+		setTextColor(COLOR_WHITE);
+	}
 }
 
 void connect2Server() {
@@ -242,8 +262,6 @@ void connect2Server() {
 	//테스트 코드
 	sprintf(buf, "title seqNum: %d\n", seqNum);
 	system(buf);
-
-	_beginthreadex(NULL, 0, RecvCoordThread, NULL, 0, NULL);
 }
 
 struct charactor* createCharactorStruct(const char icon[2], int x, int y) {
@@ -265,12 +283,8 @@ void setInitPosition() {
 	charactorArr[3] = createCharactorStruct("Ω", 16, 1);
 
 	for (int i = 0; i < MAX_PLAYABLE_COUNT; i++) {
-		struct charactor* ch = charactorArr[i];
-		gotoxy(ch->x, ch->y);
-		printf("%s", ch->icon);
+		drawIcon(i);
 	}
-
-	//gotoxy(charactorArr[seqNum]->x, charactorArr[seqNum]->y);
 }
 
 void init() {
@@ -283,13 +297,6 @@ void init() {
 	setInitPosition();
 }
 
-void keyboardHandler() {
-	HANDLE handlerThread;
-	unsigned handlerThreadThreadID;
-
-	handlerThread = (HANDLE)_beginthreadex(NULL, 0, KeyboardHandlerThread, NULL, 0, &handlerThreadThreadID); //방향키 입력에 따라서 실시간으로 dir 설정
-}
-
 void moveAllCharactors() {
 	for (int i = 0; i < MAX_PLAYABLE_COUNT; i++) {
 		move(i);
@@ -297,6 +304,10 @@ void moveAllCharactors() {
 }
 
 void sendMyNextPosition() {
+	if (seqNum >= MAX_PLAYABLE_COUNT) { // 5번째 접속부터는 그냥 구경만
+		return;
+	}
+
 	struct charactor* ch = charactorArr[seqNum];
 	int curX = ch->x;
 	int curY = ch->y;
@@ -331,7 +342,8 @@ void sendMyNextPosition() {
 void startGame() {
 	init();
 
-	keyboardHandler();
+	_beginthreadex(NULL, 0, KeyboardHandlerThread, NULL, 0, NULL); //방향키 입력에 따라서 실시간으로 dir 설정
+	_beginthreadex(NULL, 0, RecvCoordThread, NULL, 0, NULL); //실시간으로 캐릭터들의 좌표를 서버로부터 수신
 
 	while (1) {
 		sendMyNextPosition();

@@ -70,11 +70,15 @@ struct charactor {
 	int next_y; //서버에서 전송된, 이제 이동해야할 y좌표
 };
 
-struct charactor* charactorArr[MAX_PLAYABLE_COUNT];
+struct charactor* charactorArr[MAX_PLAYABLE_COUNT]; //무조건 마지막 플레이어가 추적자
 
 SOCKET hSocket;
 
-int moveSpeed = 300; //moveSpeed 밀리초만큼 Sleep한 후 캐릭터가 1칸 움직이는 걸 반복합니다. (숫자가 낮을수록 속도가 빠름)
+int chaserSpeed = 250; //추적자 속도. moveSpeed 밀리초만큼 Sleep한 후 캐릭터가 1칸 움직이는 걸 반복합니다. (숫자가 낮을수록 속도가 빠름)
+int runnerSpeed = 300; //도망자 속도. moveSpeed 밀리초만큼 Sleep한 후 캐릭터가 1칸 움직이는 걸 반복합니다. (숫자가 낮을수록 속도가 빠름)
+int clock = 0;
+int clockIncreaseAmount = 50; //반드시 chaserSpeed와 runnerSpeed의 공약수여야함.
+
 int seqNum;
 int dir; //상,하,좌,우 각각 8,2,4,6 (숫자 키패드)
 
@@ -346,9 +350,14 @@ void startGame() {
 	_beginthreadex(NULL, 0, RecvCoordThread, NULL, 0, NULL); //실시간으로 캐릭터들의 좌표를 서버로부터 수신
 
 	while (1) {
-		sendMyNextPosition();
+		if ( (seqNum == MAX_PLAYABLE_COUNT - 1 && clock % chaserSpeed == 0) || (seqNum != MAX_PLAYABLE_COUNT - 1 && clock % runnerSpeed == 0) ) { //추적자는 charserSpeed마다, 도망자는 runnerSpeed마다 자신의 위치를 옮긴 후 서버에게 보냄
+			sendMyNextPosition();
+		}
+
 		moveAllCharactors();
-		Sleep(300);
+
+		Sleep(clockIncreaseAmount);
+		clock += clockIncreaseAmount;
 	}
 }
 

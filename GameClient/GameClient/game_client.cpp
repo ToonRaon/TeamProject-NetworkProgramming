@@ -1,4 +1,5 @@
 #pragma comment(lib, "ws2_32")
+#define _CRT_SECURE_NO_WARNINGS
 
 #include <WinSock2.h>
 #include <stdio.h>
@@ -9,6 +10,11 @@
 
 #define MAP_HEIGHT 20
 #define MAP_WIDTH 34
+#define MAX_PLAYABLE_COUNT 4 //최대 플레이 가능 인원
+#define BUF_SIZE 1024
+
+#define COLOR_WHITE 7
+#define COLOR_RED 4
 
 int map_input[MAP_HEIGHT][MAP_WIDTH] = {
 	1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
@@ -56,9 +62,33 @@ char map[MAP_HEIGHT][MAP_WIDTH * 2 + 1] = {
 	"■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■",
 };
 
-int dir; //상,하,좌,우 각각 8,2,4,6 (숫자 키패드)
-int moveSpeed = 300; //moveSpeed 밀리초만큼 Sleep한 후 캐릭터가 1칸 움직이는 걸 반복합니다. (숫자가 낮을수록 속도가 빠름)
+struct charactor {
+	char icon[2]; //추격자: Ω, 도망자: ●
+	int x; //현재 화면 상의 x좌표
+	int y; //현재 화면 상의 y좌표
+	int next_x; //서버에서 전송된, 이제 이동해야할 x좌표
+	int next_y; //서버에서 전송된, 이제 이동해야할 y좌표
+};
 
+struct charactor* charactorArr[MAX_PLAYABLE_COUNT];
+
+SOCKET hSocket;
+
+int moveSpeed = 300; //moveSpeed 밀리초만큼 Sleep한 후 캐릭터가 1칸 움직이는 걸 반복합니다. (숫자가 낮을수록 속도가 빠름)
+int seqNum;
+int dir; //상,하,좌,우 각각 8,2,4,6 (숫자 키패드)
+
+
+void ErrorHandling(const char *message)
+{
+	fputs(message, stderr);
+	fputc('\n', stderr);
+	exit(1);
+}
+
+void setTextColor(int color) {
+	SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), color);
+}
 
 unsigned int __stdcall KeyboardHandlerThread(void* args) {
 	while (1) {
@@ -84,6 +114,30 @@ unsigned int __stdcall KeyboardHandlerThread(void* args) {
 	}
 
 	return 0;
+}
+
+unsigned int __stdcall RecvCoordThread(void* args) {
+	char buf[BUF_SIZE];
+	char buf2[BUF_SIZE];
+	char buf3[BUF_SIZE];
+
+	while (1) {
+		recv(hSocket, buf, sizeof(buf), 0); //seqNum
+		recv(hSocket, buf2, sizeof(buf2), 0); //x 좌표
+		recv(hSocket, buf3, sizeof(buf3), 0); //y 좌표
+
+		struct charactor* ch = charactorArr[atoi(buf)];
+		ch->next_x = atoi(buf2);
+		ch->next_y = atoi(buf3);
+	}
+
+	return 0;
+}
+
+void sendInt2Server(int k) {
+	char buf[BUF_SIZE];
+	sprintf(buf, "%d", k);
+	send(hSocket, buf, sizeof(buf), 0);
 }
 
 //2차원 char 배열을 출력한다. r은 행, c는 열
@@ -139,11 +193,6 @@ bool isWall(int x, int y) {
 	int r = y;
 	int c = x / 2;
 
-	//좌표를 콘솔창 타이틀에 출력
-	//char temp[100];
-	//sprintf(temp, "title y: %d, x: %d, r: %d, c: %d", y, x, r, c);
-	//system(temp);
-
 	if (map_input[r][c] == 1) {
 		return true;
 	}
@@ -151,10 +200,106 @@ bool isWall(int x, int y) {
 	return false;
 }
 
-void move(int dir) {
-	COORD cur = getxy();
-	int curX = cur.X;
-	int curY = cur.Y;
+void move(int k) {
+	struct charactor* ch = charactorArr[k];
+
+	gotoxy(ch->x, ch->y);
+	printf("　");
+	gotoxy(ch->next_x, ch->next_y);
+	if (k == seqNum) { //내 클라이언트에 해당하는 캐릭터 바꿀 땐 빨간색으로 아이콘 표시
+		setTextColor(COLOR_RED);
+	}
+	printf("%s", ch->icon);
+	if (k == seqNum) {
+		setTextColor(COLOR_WHITE);
+	}
+	ch->x = ch->next_x;
+	ch->y = ch->next_y;
+}
+
+void connect2Server() {
+	WSADATA wsaData;
+
+	char buf[BUF_SIZE];
+	char buf2[BUF_SIZE];
+	int readCnt;
+	SOCKADDR_IN servAdr;
+
+	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
+		ErrorHandling("WSAStartup() error!");
+
+	hSocket = socket(PF_INET, SOCK_STREAM, 0);
+
+	memset(&servAdr, 0, sizeof(servAdr));
+	servAdr.sin_family = AF_INET;
+	servAdr.sin_addr.s_addr = inet_addr("127.0.0.1");
+	servAdr.sin_port = htons(atoi("123654"));
+
+	connect(hSocket, (SOCKADDR*)&servAdr, sizeof(servAdr));
+	recv(hSocket, buf, sizeof(buf), 0);//이 클라의 시퀀스 번호 받아옴
+	seqNum = atoi(buf); //받아온 시리얼 번호를 int로 변환하여 seqNum에 저장
+
+	//테스트 코드
+	sprintf(buf, "title seqNum: %d\n", seqNum);
+	system(buf);
+
+	_beginthreadex(NULL, 0, RecvCoordThread, NULL, 0, NULL);
+}
+
+struct charactor* createCharactorStruct(const char icon[2], int x, int y) {
+	struct charactor* ch = (struct charactor*)malloc(sizeof(struct charactor));
+	ch->x = x;
+	ch->y = y;
+	ch->next_x = x;
+	ch->next_y = y;
+	strcpy(ch->icon, icon);
+
+	return ch;
+}
+
+//캐릭터들의 처음 위치 세팅
+void setInitPosition() {
+	charactorArr[0] = createCharactorStruct("●", 2, 1);
+	charactorArr[1] = createCharactorStruct("●", 12, 1);
+	charactorArr[2] = createCharactorStruct("●", 14, 1);
+	charactorArr[3] = createCharactorStruct("Ω", 16, 1);
+
+	for (int i = 0; i < MAX_PLAYABLE_COUNT; i++) {
+		struct charactor* ch = charactorArr[i];
+		gotoxy(ch->x, ch->y);
+		printf("%s", ch->icon);
+	}
+
+	//gotoxy(charactorArr[seqNum]->x, charactorArr[seqNum]->y);
+}
+
+void init() {
+	connect2Server();
+
+	printMap();
+
+	removeCursor();
+
+	setInitPosition();
+}
+
+void keyboardHandler() {
+	HANDLE handlerThread;
+	unsigned handlerThreadThreadID;
+
+	handlerThread = (HANDLE)_beginthreadex(NULL, 0, KeyboardHandlerThread, NULL, 0, &handlerThreadThreadID); //방향키 입력에 따라서 실시간으로 dir 설정
+}
+
+void moveAllCharactors() {
+	for (int i = 0; i < MAX_PLAYABLE_COUNT; i++) {
+		move(i);
+	}
+}
+
+void sendMyNextPosition() {
+	struct charactor* ch = charactorArr[seqNum];
+	int curX = ch->x;
+	int curY = ch->y;
 	int nextX = curX;
 	int nextY = curY;
 
@@ -176,45 +321,31 @@ void move(int dir) {
 	if (isWall(nextX, nextY)) { //움직이려는 곳이 벽이면
 		return;
 	}
-	printf("　");
-	gotoxy(nextX, nextY);
-	printf("◎");
 
-	cur = getxy();
-	gotoxy(cur.X - 2, cur.Y); //printf하면 오른쪽으로 커서 밀려서 다시 원래대로
-}
-
-void init() {
-	printMap();
-
-	removeCursor();
-}
-
-void keyboardHandler() {
-	HANDLE handlerThread;
-	unsigned handlerThreadThreadID;
-
-	handlerThread = (HANDLE)_beginthreadex(NULL, 0, KeyboardHandlerThread, NULL, 0, &handlerThreadThreadID); //이 쓰레드에서 방향키에 따라 dir를 설정
-
-	while (1) {
-		move(dir); //dir방향으로 이동
-		Sleep(moveSpeed); //moveSpeed 시간만큼 sleep
-	}
+	//서버에 seqNum x y 전송
+	sendInt2Server(seqNum);
+	sendInt2Server(nextX);
+	sendInt2Server(nextY);
 }
 
 void startGame() {
 	init();
 
-	gotoxy(2, 1);
-	printf("◎");
-	gotoxy(2, 1);
-
 	keyboardHandler();
+
+	while (1) {
+		sendMyNextPosition();
+		moveAllCharactors();
+		Sleep(300);
+	}
 }
 
 int main() {
 
 	startGame();
+
+	closesocket(hSocket);
+	WSACleanup();
 
 	Sleep(3000);
 	return 0;

@@ -5,16 +5,110 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define BUF_SIZE 1024
 #define MAX_PLAYABLE_COUNT 4 //최대 플레이 가능 인원
 
+#define MAP_HEIGHT 20
+#define MAP_WIDTH 34
+
+int map_input[MAP_HEIGHT][MAP_WIDTH] = {
+	1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+	1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,1,1,0,0,1,
+	1,0,1,0,1,0,1,1,0,1,1,1,1,1,0,1,0,1,0,1,1,1,1,1,0,0,0,0,0,0,1,0,1,1,
+	1,0,1,0,1,0,0,0,0,1,0,0,0,0,0,0,0,1,0,1,0,0,1,0,0,1,0,1,0,0,1,0,0,1,
+	1,0,1,1,1,0,1,1,0,1,0,1,1,1,0,1,1,1,0,1,1,0,1,0,1,1,0,1,0,0,1,0,0,1,
+	1,0,1,0,0,0,0,0,0,0,0,1,0,1,0,1,1,0,0,0,1,0,1,1,1,1,1,1,1,0,0,0,0,1,
+	1,0,1,1,0,1,1,0,1,1,1,0,0,0,0,1,0,1,0,1,1,0,0,1,0,0,1,0,0,0,1,1,1,1,
+	1,0,0,0,0,1,1,0,1,0,0,0,1,0,1,1,0,0,0,0,0,0,0,0,0,0,1,0,1,0,1,0,0,1,
+	1,1,0,1,0,1,1,1,1,1,1,0,1,0,0,1,0,1,1,1,0,1,1,1,1,0,1,0,1,0,1,1,0,1,
+	1,1,1,1,0,1,1,0,0,0,1,0,0,0,0,1,0,0,0,0,0,0,1,0,0,0,1,0,1,0,0,0,0,1,
+	1,0,0,1,0,0,0,0,1,0,1,0,1,1,0,0,0,1,1,0,1,1,1,0,1,1,0,0,1,1,1,1,0,1,
+	1,0,1,1,0,1,1,0,1,0,1,0,0,0,0,1,0,0,0,1,0,0,0,0,1,1,0,1,0,0,0,1,0,1,
+	1,0,0,0,0,1,0,0,1,0,0,0,1,1,0,1,1,1,1,1,1,0,1,1,0,0,0,1,0,1,0,1,0,1,
+	1,0,1,1,1,0,0,0,1,1,1,0,1,0,0,0,0,0,0,0,0,0,1,0,0,1,0,1,0,1,0,0,0,1,
+	1,0,1,0,1,0,1,0,0,0,0,0,0,0,0,1,0,1,0,1,0,1,1,1,1,1,0,1,0,0,0,1,0,1,
+	1,0,0,1,0,1,1,0,1,0,1,1,1,0,1,1,0,1,0,1,0,1,0,0,1,0,0,0,1,1,1,1,0,1,
+	1,0,1,1,0,1,1,0,1,0,1,0,1,0,1,0,0,0,0,1,0,0,0,0,1,0,1,0,0,0,0,0,0,1,
+	1,0,1,0,0,1,0,0,0,1,1,0,0,0,1,0,1,0,1,1,1,1,1,0,1,0,1,0,1,1,1,1,0,1,
+	1,0,0,0,0,0,0,1,0,0,0,0,1,1,1,0,1,0,0,0,1,0,0,0,0,0,1,0,1,0,0,0,0,1,
+	1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+};
+
+struct coord {
+	int x;
+	int y;
+};
+struct coord coordArr[MAX_PLAYABLE_COUNT];
 
 void ErrorHandling(const char *message)
 {
 	fputs(message, stderr);
 	fputc('\n', stderr);
 	exit(1);
+}
+
+bool isWall(int x, int y) {
+	int r = y;
+	int c = x / 2;
+
+	if (map_input[r][c] == 1) {
+		return true;
+	}
+
+	return false;
+}
+
+//0 ~ bound - 1 사이 정수를 랜덤으로 반환
+int getRand(int bound) {
+	srand(time(NULL));
+
+	return (rand() % bound);
+}
+
+//캐릭터들의 처음 위치 세팅
+void setInitPosition() {
+	//랜덤으로 하니까 너무 오래 걸림
+	//for (int i = 0; i < MAX_PLAYABLE_COUNT; i++) { // 마지막 1명만 추적자
+	//	struct coord crd;
+
+	//	while (1) {
+	//		crd.x = 2 * getRand(MAP_WIDTH);
+	//		crd.y = getRand(MAP_HEIGHT);
+
+	//		//뽑은 x, y좌표가 벽이거나 이미 다른 캐릭터가 있는 자리면 다시 뽑음
+	//		if (isWall(crd.x, crd.y)) {
+	//			continue;
+	//		}
+	//		bool isOverlaped = false;
+	//		for (int j = 0; j < i; j++) {
+	//			if (coordArr[j].x == crd.x && coordArr[j].y == crd.y) {
+	//				isOverlaped = true;
+	//			}
+	//		}
+	//		if (isOverlaped) {
+	//			continue;
+	//		}
+
+	//		break;
+	//	}
+
+	//	coordArr[i] = crd;
+	//}
+
+	//그냥 정해진 곳에 스폰
+	coordArr[0].x = 6;
+	coordArr[0].y = 1;
+
+	coordArr[1].x = 22;
+	coordArr[1].y = 9;
+
+	coordArr[2].x = 42;
+	coordArr[2].y = 6;
+
+	coordArr[3].x = 36;
+	coordArr[3].y = 11;
 }
 
 void startGameServer() {
@@ -82,6 +176,12 @@ void startGameServer() {
 					char string_connectedClientCount[16];
 					sprintf(string_connectedClientCount, "%d", connectedClientCount++);
 					send(hClntSock, string_connectedClientCount, sizeof(string_connectedClientCount), 0); //클라이언트에게 클라이언트의 시퀀스 번호를 보내준다.
+
+					//각 캐릭터들 위치 전송
+					for (int j = 0; j < MAX_PLAYABLE_COUNT; j++) {
+						sprintf(buf, "%d %d", coordArr[j].x, coordArr[j].y);
+						send(hClntSock, buf, sizeof(buf), 0);
+					}
 				}
 				else    // read message!
 				{
@@ -116,7 +216,9 @@ void startGameServer() {
 }
 
 int main() {
+	setInitPosition();
 
+	printf("Server started\n");
 	startGameServer();
 
 	return 0;

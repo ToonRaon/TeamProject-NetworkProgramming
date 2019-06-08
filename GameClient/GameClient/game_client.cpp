@@ -263,6 +263,16 @@ void connect2Server() {
 	recv(hSocket, buf, sizeof(buf), 0);//이 클라의 시퀀스 번호 받아옴
 	seqNum = atoi(buf); //받아온 시리얼 번호를 int로 변환하여 seqNum에 저장
 
+	//각 캐릭터들의 초기 좌표 받아옴
+	for (int i = 0; i < MAX_PLAYABLE_COUNT; i++) {
+		recv(hSocket, buf, sizeof(buf), 0);
+
+		charactorArr[i]->x = atoi(strtok(buf, " "));
+		charactorArr[i]->next_x = charactorArr[i]->x;
+		charactorArr[i]->y = atoi(strtok(NULL, " "));
+		charactorArr[i]->next_y = charactorArr[i]->y;
+	}
+
 	//테스트 코드
 	sprintf(buf, "title seqNum: %d\n", seqNum);
 	system(buf);
@@ -279,26 +289,25 @@ struct charactor* createCharactorStruct(const char icon[2], int x, int y) {
 	return ch;
 }
 
-//캐릭터들의 처음 위치 세팅
-void setInitPosition() {
-	charactorArr[0] = createCharactorStruct("●", 2, 1);
-	charactorArr[1] = createCharactorStruct("●", 12, 1);
-	charactorArr[2] = createCharactorStruct("●", 14, 1);
-	charactorArr[3] = createCharactorStruct("Ω", 16, 1);
-
+void initCharactorArr() {
 	for (int i = 0; i < MAX_PLAYABLE_COUNT; i++) {
-		drawIcon(i);
+		if (i == MAX_PLAYABLE_COUNT - 1) { //추적자
+			charactorArr[i] = createCharactorStruct("Ω", -1, -1);
+		}
+		else { //도망자
+			charactorArr[i] = createCharactorStruct("●", -1, -1);
+		}
 	}
 }
 
 void init() {
-	connect2Server();
-
 	printMap();
 
-	removeCursor();
+	initCharactorArr();
 
-	setInitPosition();
+	connect2Server();
+
+	removeCursor();
 }
 
 void moveAllCharactors() {

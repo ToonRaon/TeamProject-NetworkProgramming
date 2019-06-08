@@ -89,6 +89,8 @@ int dir; //상,하,좌,우 각각 8,2,4,6 (숫자 키패드)
 int survivorCount = MAX_PLAYABLE_COUNT - 1;
 int leftTime = 10000;
 
+bool isGameOver = false;
+
 CRITICAL_SECTION cs;
 
 
@@ -110,6 +112,10 @@ unsigned int __stdcall KeyboardHandlerThread(void* args) {
 	}
 
 	while (1) {
+		if (isGameOver) {
+			break;
+		}
+
 		int key = getch();
 
 		if (key == 224) { //방향키 아스키 코드 ↑: 224, 72 ↓: 224, 80 ←: 224, 75 →: 224, 77
@@ -225,12 +231,10 @@ void drawIcon(int seq) {
 		return;
 	}
 
-	EnterCriticalSection(&cs);
-
 	//원래 위치에 있던 아이콘 지우고
 	gotoxy(ch->x, ch->y);
-	printf("※");
-	//printf("　");
+	//printf("※");
+	printf("　");
 
 	//새 위치로 이동
 	gotoxy(ch->next_x, ch->next_y);
@@ -238,8 +242,6 @@ void drawIcon(int seq) {
 
 	ch->x = ch->next_x;
 	ch->y = ch->next_y;
-
-	//LeaveCriticalSection(&cs);
 }
 
 struct charactor* createCharactorStruct(const char icon[2], int x, int y) {
@@ -270,6 +272,7 @@ void isCatchedByChaser() {
 
 			if (survivorCount == 0) { //남은 생존자가 없으면
 				chaserWin();
+				isGameOver = true;
 			}
 		}
 	}
@@ -309,6 +312,8 @@ void isCatchedByChaser() {
 void move(int seq) {
 	struct charactor* ch = charactorArr[seq];
 
+	EnterCriticalSection(&cs);
+
 	if (seq == seqNum) { //내 클라이언트에 해당하는 캐릭터 바꿀 땐 빨간색으로 아이콘 표시
 		setTextColor(COLOR_RED);
 	}
@@ -318,6 +323,8 @@ void move(int seq) {
 	if (seq == seqNum) {
 		setTextColor(COLOR_WHITE);
 	}
+
+	LeaveCriticalSection(&cs);
 	
 	//isPowerPellet(seq);
 	isCatchedByChaser();
@@ -441,12 +448,34 @@ void sendMyNextPosition() {
 }
 
 void showLeftTime() {
-	//EnterCriticalSection(&cs);
+	EnterCriticalSection(&cs);
 
 	gotoxy(100, 3);
 	printf("%d seconds left", leftTime / 1000);
 
-	//LeaveCriticalSection(&cs);
+	LeaveCriticalSection(&cs);
+}
+
+void timeover() {
+	isGameOver = true;
+	system("title 시간 초과로 도망자가 승리하였습니다!");
+}
+
+unsigned int __stdcall LeftTimeThread(void* args) {
+	while (1) {
+		if (clockCount % 1000 == 0) {
+			showLeftTime(); //남은 시간 출력
+			leftTime -= 1000;
+			if (leftTime <= 0) {
+				timeover();
+				break;
+			}
+
+			Sleep(100);
+		}
+	}
+
+	return 0;
 }
 
 void startGame() {
@@ -457,13 +486,9 @@ void startGame() {
 
 	_beginthreadex(NULL, 0, KeyboardHandlerThread, NULL, 0, NULL); //방향키 입력에 따라서 실시간으로 dir 설정
 	_beginthreadex(NULL, 0, RecvCoordThread, NULL, 0, NULL); //실시간으로 캐릭터들의 좌표를 서버로부터 수신
+	_beginthreadex(NULL, 0, LeftTimeThread, NULL, 0, NULL); //시간 감지
 
 	while (1) {
-		if (clockCount % 1000) {
-			showLeftTime(); //남은 시간 출력
-			leftTime -= 1;
-		}
-
 		if ( (seqNum == MAX_PLAYABLE_COUNT - 1 && clockCount % chaserSpeed == 0) || (seqNum != MAX_PLAYABLE_COUNT - 1 && clockCount % runnerSpeed == 0) ) { //추적자는 charserSpeed마다, 도망자는 runnerSpeed마다 자신의 위치를 옮긴 후 서버에게 보냄
 			sendMyNextPosition();
 		}

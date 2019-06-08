@@ -116,10 +116,10 @@ unsigned int __stdcall KeyboardHandlerThread(void* args) {
 			break;
 		}
 
-		int key = getch();
+		int key = _getch();
 
 		if (key == 224) { //방향키 아스키 코드 ↑: 224, 72 ↓: 224, 80 ←: 224, 75 →: 224, 77
-			key = getch();
+			key = _getch();
 			switch (key) {
 			case 72: //위
 				dir = 8;

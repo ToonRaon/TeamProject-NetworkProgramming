@@ -7,8 +7,6 @@
 #include <conio.h>
 #include <process.h>
 #include <Windows.h>
-#include <time.h>
-#include <string.h>
 
 #define MAP_HEIGHT 20
 #define MAP_WIDTH 34
@@ -78,13 +76,11 @@ SOCKET hSocket;
 
 int chaserSpeed = 250; //추적자 속도. moveSpeed 밀리초만큼 Sleep한 후 캐릭터가 1칸 움직이는 걸 반복합니다. (숫자가 낮을수록 속도가 빠름)
 int runnerSpeed = 300; //도망자 속도. moveSpeed 밀리초만큼 Sleep한 후 캐릭터가 1칸 움직이는 걸 반복합니다. (숫자가 낮을수록 속도가 빠름)
-int clockCount = 0;
-int clockCountIncreaseAmount = 50; //반드시 chaserSpeed와 runnerSpeed의 공약수여야함.
+int clock = 0;
+int clockIncreaseAmount = 50; //반드시 chaserSpeed와 runnerSpeed의 공약수여야함.
 
 int seqNum;
 int dir; //상,하,좌,우 각각 8,2,4,6 (숫자 키패드)
-
-int survivorCount = MAX_PLAYABLE_COUNT - 1;
 
 
 void ErrorHandling(const char *message)
@@ -231,27 +227,6 @@ void drawIcon(int seq) {
 	ch->y = ch->next_y;
 }
 
-void chaserWin() {
-	system("title 추격자가 승리하였습니다!");
-}
-
-void isCatchedByChaser() {
-	for (int i = 0; i < MAX_PLAYABLE_COUNT - 1; i++) {
-		if (charactorArr[i]->x == charactorArr[MAX_PLAYABLE_COUNT - 1]->x && charactorArr[i]->y == charactorArr[MAX_PLAYABLE_COUNT - 1]->y) { //어떤 도망자가 추적자에게 잡히면
-			charactorArr[i]->x = -1;
-			charactorArr[i]->next_x = -1;
-			charactorArr[i]->y = -1;
-			charactorArr[i]->next_y = -1;
-
-			survivorCount--;
-
-			if (survivorCount == 0) { //남은 생존자가 없으면
-				chaserWin();
-			}
-		}
-	}
-}
-
 void move(int seq) {
 	struct charactor* ch = charactorArr[seq];
 
@@ -264,8 +239,6 @@ void move(int seq) {
 	if (seq == seqNum) {
 		setTextColor(COLOR_WHITE);
 	}
-
-	isCatchedByChaser();
 }
 
 void connect2Server() {
@@ -290,15 +263,6 @@ void connect2Server() {
 	recv(hSocket, buf, sizeof(buf), 0);//이 클라의 시퀀스 번호 받아옴
 	seqNum = atoi(buf); //받아온 시리얼 번호를 int로 변환하여 seqNum에 저장
 
-	//각 캐릭터들의 초기 좌표 받아옴
-	for (int i = 0; i < MAX_PLAYABLE_COUNT; i++) {
-		recv(hSocket, buf, sizeof(buf), 0);
-		charactorArr[i]->x = atoi(strtok(buf, " "));
-		charactorArr[i]->next_x = charactorArr[i]->x;
-		charactorArr[i]->y = atoi(strtok(NULL, " "));
-		charactorArr[i]->next_y = charactorArr[i]->y;
-	}
-
 	//테스트 코드
 	sprintf(buf, "title seqNum: %d\n", seqNum);
 	system(buf);
@@ -315,25 +279,26 @@ struct charactor* createCharactorStruct(const char icon[2], int x, int y) {
 	return ch;
 }
 
-void initCharactorArr() {
+//캐릭터들의 처음 위치 세팅
+void setInitPosition() {
+	charactorArr[0] = createCharactorStruct("●", 2, 1);
+	charactorArr[1] = createCharactorStruct("●", 12, 1);
+	charactorArr[2] = createCharactorStruct("●", 14, 1);
+	charactorArr[3] = createCharactorStruct("Ω", 16, 1);
+
 	for (int i = 0; i < MAX_PLAYABLE_COUNT; i++) {
-		if (i == MAX_PLAYABLE_COUNT - 1) { //추적자
-			charactorArr[i] = createCharactorStruct("Ω", -1, -1);
-		}
-		else { //도망자
-			charactorArr[i] = createCharactorStruct("●", -1, -1);
-		}
+		drawIcon(i);
 	}
 }
 
 void init() {
+	connect2Server();
+
 	printMap();
 
-	initCharactorArr();
-
-	connect2Server();
-	
 	removeCursor();
+
+	setInitPosition();
 }
 
 void moveAllCharactors() {
@@ -385,14 +350,14 @@ void startGame() {
 	_beginthreadex(NULL, 0, RecvCoordThread, NULL, 0, NULL); //실시간으로 캐릭터들의 좌표를 서버로부터 수신
 
 	while (1) {
-		if ( (seqNum == MAX_PLAYABLE_COUNT - 1 && clockCount % chaserSpeed == 0) || (seqNum != MAX_PLAYABLE_COUNT - 1 && clockCount % runnerSpeed == 0) ) { //추적자는 charserSpeed마다, 도망자는 runnerSpeed마다 자신의 위치를 옮긴 후 서버에게 보냄
+		if ( (seqNum == MAX_PLAYABLE_COUNT - 1 && clock % chaserSpeed == 0) || (seqNum != MAX_PLAYABLE_COUNT - 1 && clock % runnerSpeed == 0) ) { //추적자는 charserSpeed마다, 도망자는 runnerSpeed마다 자신의 위치를 옮긴 후 서버에게 보냄
 			sendMyNextPosition();
 		}
 
 		moveAllCharactors();
 
-		Sleep(clockCountIncreaseAmount);
-		clockCount = clockCount + clockCountIncreaseAmount;
+		Sleep(clockIncreaseAmount);
+		clock += clockIncreaseAmount;
 	}
 }
 

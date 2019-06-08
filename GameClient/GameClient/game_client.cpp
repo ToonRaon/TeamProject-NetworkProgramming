@@ -7,6 +7,8 @@
 #include <conio.h>
 #include <process.h>
 #include <Windows.h>
+#include <time.h>
+#include <string.h>
 
 #define MAP_HEIGHT 20
 #define MAP_WIDTH 34
@@ -68,19 +70,27 @@ struct charactor {
 	int y; //현재 화면 상의 y좌표
 	int next_x; //서버에서 전송된, 이제 이동해야할 x좌표
 	int next_y; //서버에서 전송된, 이제 이동해야할 y좌표
+	int powerMode; //파워 펠릿 먹었는지
 };
 
 struct charactor* charactorArr[MAX_PLAYABLE_COUNT]; //무조건 마지막 플레이어가 추적자
+struct charactor* powerPelletArr[4]; //파워 펠릿 위치 저장
 
 SOCKET hSocket;
 
-int chaserSpeed = 250; //추적자 속도. moveSpeed 밀리초만큼 Sleep한 후 캐릭터가 1칸 움직이는 걸 반복합니다. (숫자가 낮을수록 속도가 빠름)
-int runnerSpeed = 300; //도망자 속도. moveSpeed 밀리초만큼 Sleep한 후 캐릭터가 1칸 움직이는 걸 반복합니다. (숫자가 낮을수록 속도가 빠름)
-int clock = 0;
-int clockIncreaseAmount = 50; //반드시 chaserSpeed와 runnerSpeed의 공약수여야함.
+int chaserSpeed = 70; //추적자 속도. moveSpeed 밀리초만큼 Sleep한 후 캐릭터가 1칸 움직이는 걸 반복합니다. (숫자가 낮을수록 속도가 빠름)
+int runnerSpeed = 100; //도망자 속도. moveSpeed 밀리초만큼 Sleep한 후 캐릭터가 1칸 움직이는 걸 반복합니다. (숫자가 낮을수록 속도가 빠름)
+int clockCount = 0;
+int clockCountIncreaseAmount = 1; //반드시 chaserSpeed와 runnerSpeed의 공약수여야함.
 
 int seqNum;
 int dir; //상,하,좌,우 각각 8,2,4,6 (숫자 키패드)
+
+int survivorCount = MAX_PLAYABLE_COUNT - 1;
+int leftTime = 10000;
+
+CRITICAL_SECTION cs;
+
 
 
 void ErrorHandling(const char *message)
@@ -215,9 +225,12 @@ void drawIcon(int seq) {
 		return;
 	}
 
+	EnterCriticalSection(&cs);
+
 	//원래 위치에 있던 아이콘 지우고
 	gotoxy(ch->x, ch->y);
-	printf("　");
+	printf("※");
+	//printf("　");
 
 	//새 위치로 이동
 	gotoxy(ch->next_x, ch->next_y);
@@ -225,7 +238,73 @@ void drawIcon(int seq) {
 
 	ch->x = ch->next_x;
 	ch->y = ch->next_y;
+
+	//LeaveCriticalSection(&cs);
 }
+
+struct charactor* createCharactorStruct(const char icon[2], int x, int y) {
+	struct charactor* ch = (struct charactor*)malloc(sizeof(struct charactor));
+	ch->x = x;
+	ch->y = y;
+	ch->next_x = x;
+	ch->next_y = y;
+	strcpy(ch->icon, icon);
+	ch->powerMode = false;
+
+	return ch;
+}
+
+void chaserWin() {
+	system("title 추격자가 승리하였습니다!");
+}
+
+void isCatchedByChaser() {
+	for (int i = 0; i < MAX_PLAYABLE_COUNT - 1; i++) {
+		if (charactorArr[i]->x == charactorArr[MAX_PLAYABLE_COUNT - 1]->x && charactorArr[i]->y == charactorArr[MAX_PLAYABLE_COUNT - 1]->y) { //어떤 도망자가 추적자에게 잡히면
+			charactorArr[i]->x = -1;
+			charactorArr[i]->next_x = -1;
+			charactorArr[i]->y = -1;
+			charactorArr[i]->next_y = -1;
+
+			survivorCount--;
+
+			if (survivorCount == 0) { //남은 생존자가 없으면
+				chaserWin();
+			}
+		}
+	}
+}
+
+//특정 시간동안 파워모드로 만들고 색깔 깜빡깜빡하게 한 후 일정 시간 지나면 꺼짐
+//unsigned int __stdcall PowerPelletThread(void* args) {
+//	int counter = 0;
+//
+//	while (1) {
+//		if (counter >= 5000) {
+//			break;
+//		}
+//
+//		if (counter % 1000) {
+//			strcpy(charactorArr[*(int*)args]->icon, "○");
+//		}
+//		else {
+//			strcpy(charactorArr[*(int*)args]->icon, "●");
+//		}
+//
+//		counter += 500;
+//		Sleep(500);
+//	}
+//
+//	return 0;
+//}
+//
+//void isPowerPellet(int seq) {
+//	for (int i = 0; i < 4; i++) {
+//		if (powerPelletArr[i]->x == charactorArr[seq]->x && powerPelletArr[i]->y == charactorArr[seq]->y) {
+//			_beginthreadex(NULL, 0, PowerPelletThread, &seq, 0, NULL);
+//		}
+//	}
+//}
 
 void move(int seq) {
 	struct charactor* ch = charactorArr[seq];
@@ -239,6 +318,9 @@ void move(int seq) {
 	if (seq == seqNum) {
 		setTextColor(COLOR_WHITE);
 	}
+	
+	//isPowerPellet(seq);
+	isCatchedByChaser();
 }
 
 void connect2Server() {
@@ -273,20 +355,18 @@ void connect2Server() {
 		charactorArr[i]->next_y = charactorArr[i]->y;
 	}
 
+	//파워 펠릿 위치 받아옴
+	for (int i = 0; i < 4; i++) {
+		recv(hSocket, buf, sizeof(buf), 0);
+
+		int x = atoi(strtok(buf, " "));
+		int y = atoi(strtok(NULL, " "));
+		powerPelletArr[i] = createCharactorStruct("★", x, y);
+	}
+
 	//테스트 코드
 	sprintf(buf, "title seqNum: %d\n", seqNum);
 	system(buf);
-}
-
-struct charactor* createCharactorStruct(const char icon[2], int x, int y) {
-	struct charactor* ch = (struct charactor*)malloc(sizeof(struct charactor));
-	ch->x = x;
-	ch->y = y;
-	ch->next_x = x;
-	ch->next_y = y;
-	strcpy(ch->icon, icon);
-
-	return ch;
 }
 
 void initCharactorArr() {
@@ -300,12 +380,20 @@ void initCharactorArr() {
 	}
 }
 
+void printPowerPellet() {
+	for (int i = 0; i < 4; i++) {
+		//drawIcon(powerPelletArr, i);
+	}
+}
+
 void init() {
 	printMap();
 
 	initCharactorArr();
 
 	connect2Server();
+	
+	//printPowerPellet();
 
 	removeCursor();
 }
@@ -352,22 +440,41 @@ void sendMyNextPosition() {
 	sendInt2Server(nextY);
 }
 
+void showLeftTime() {
+	//EnterCriticalSection(&cs);
+
+	gotoxy(100, 3);
+	printf("%d seconds left", leftTime / 1000);
+
+	//LeaveCriticalSection(&cs);
+}
+
 void startGame() {
+
 	init();
+	
+	InitializeCriticalSection(&cs);
 
 	_beginthreadex(NULL, 0, KeyboardHandlerThread, NULL, 0, NULL); //방향키 입력에 따라서 실시간으로 dir 설정
 	_beginthreadex(NULL, 0, RecvCoordThread, NULL, 0, NULL); //실시간으로 캐릭터들의 좌표를 서버로부터 수신
 
 	while (1) {
-		if ( (seqNum == MAX_PLAYABLE_COUNT - 1 && clock % chaserSpeed == 0) || (seqNum != MAX_PLAYABLE_COUNT - 1 && clock % runnerSpeed == 0) ) { //추적자는 charserSpeed마다, 도망자는 runnerSpeed마다 자신의 위치를 옮긴 후 서버에게 보냄
+		if (clockCount % 1000) {
+			showLeftTime(); //남은 시간 출력
+			leftTime -= 1;
+		}
+
+		if ( (seqNum == MAX_PLAYABLE_COUNT - 1 && clockCount % chaserSpeed == 0) || (seqNum != MAX_PLAYABLE_COUNT - 1 && clockCount % runnerSpeed == 0) ) { //추적자는 charserSpeed마다, 도망자는 runnerSpeed마다 자신의 위치를 옮긴 후 서버에게 보냄
 			sendMyNextPosition();
 		}
 
 		moveAllCharactors();
 
-		Sleep(clockIncreaseAmount);
-		clock += clockIncreaseAmount;
+		Sleep(clockCountIncreaseAmount);
+		clockCount = clockCount + clockCountIncreaseAmount;
 	}
+
+	DeleteCriticalSection(&cs);
 }
 
 int main() {

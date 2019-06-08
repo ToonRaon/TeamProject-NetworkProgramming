@@ -41,6 +41,9 @@ struct coord {
 	int y;
 };
 struct coord coordArr[MAX_PLAYABLE_COUNT];
+struct coord powerPelletArr[4];
+
+
 
 void ErrorHandling(const char *message)
 {
@@ -111,8 +114,25 @@ void setInitPosition() {
 	coordArr[3].y = 11;
 }
 
-void startGameServer() {
+void setPowerPelletPosition() {
+	powerPelletArr[0].x = 10;
+	powerPelletArr[0].y = 1;
 
+	powerPelletArr[1].x = 2;
+	powerPelletArr[1].y = 10;
+
+	powerPelletArr[2].x = 32;
+	powerPelletArr[2].y = 1;
+
+	powerPelletArr[3].x = 21;
+	powerPelletArr[3].y = 18;
+}
+
+void setItemPosition() {
+	setPowerPelletPosition();
+}
+
+void startGameServer() {
 	WSADATA wsaData;
 	SOCKET hServSock, hClntSock;
 	SOCKADDR_IN servAdr, clntAdr;
@@ -173,13 +193,19 @@ void startGameServer() {
 					printf("connected client: %d \n", hClntSock);
 
 					//connectedClientCount를 string으로 변환 후 클라에게 send == 즉 시퀀스 번호를 넘겨준다
-					char string_connectedClientCount[16];
-					sprintf(string_connectedClientCount, "%d", connectedClientCount++);
-					send(hClntSock, string_connectedClientCount, sizeof(string_connectedClientCount), 0); //클라이언트에게 클라이언트의 시퀀스 번호를 보내준다.
+					char buf[16];
+					sprintf(buf, "%d", connectedClientCount++);
+					send(hClntSock, buf, sizeof(buf), 0); //클라이언트에게 클라이언트의 시퀀스 번호를 보내준다.
 
 					//각 캐릭터들 위치 전송
 					for (int j = 0; j < MAX_PLAYABLE_COUNT; j++) {
 						sprintf(buf, "%d %d", coordArr[j].x, coordArr[j].y);
+						send(hClntSock, buf, sizeof(buf), 0);
+					}
+
+					//파워펠릿 위치 전송
+					for (int j = 0; j < 4; j++) {
+						sprintf(buf, "%d %d", powerPelletArr[j].x, powerPelletArr[j].y);
 						send(hClntSock, buf, sizeof(buf), 0);
 					}
 				}
@@ -217,8 +243,9 @@ void startGameServer() {
 
 int main() {
 	setInitPosition();
+	setItemPosition();
 
-	printf("Server started\n");
+	printf("Start Server\n");
 	startGameServer();
 
 	return 0;
